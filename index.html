@@ -5,10 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Premium Lender Comparison Dashboard</title>
     
+    <!-- Fonts & Tailwind CSS for Premium Styling -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- Chart.js for Visualizations -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for Google Sheet CSV Reading -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
     <style>
@@ -17,12 +20,18 @@
         .slider-custom { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 5px; background: #e2e8f0; outline: none; }
         .slider-custom::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #4f46e5; cursor: pointer; transition: 0.2s; }
         .slider-custom::-webkit-slider-thumb:hover { background: #4338ca; transform: scale(1.1); }
+        /* Scrollbar styling for lender list */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="text-slate-800 antialiased p-4 md:p-8">
 
     <div class="max-w-7xl mx-auto space-y-6">
         
+        <!-- Header -->
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center glass-card p-6">
             <div>
                 <h1 class="text-2xl font-bold text-slate-900">Lender Repayment Strategy</h1>
@@ -34,11 +43,14 @@
             </button>
         </div>
 
+        <!-- Main Controls Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
+            <!-- Setup Parameters -->
             <div class="glass-card p-6 lg:col-span-1 space-y-6">
                 <h2 class="text-lg font-semibold border-b pb-2">Global Parameters</h2>
                 
+                <!-- Loan Amount -->
                 <div>
                     <div class="flex justify-between mb-1">
                         <label class="text-sm font-medium text-slate-700">Loan Amount</label>
@@ -47,6 +59,7 @@
                     <input type="range" id="loanAmt" min="100000" max="2000000" step="10000" value="500000" class="slider-custom" oninput="updateUI()">
                 </div>
 
+                <!-- Loan Term -->
                 <div>
                     <div class="flex justify-between mb-1">
                         <label class="text-sm font-medium text-slate-700">Loan Term (Years)</label>
@@ -55,6 +68,7 @@
                     <input type="range" id="loanTerm" min="5" max="40" step="1" value="30" class="slider-custom" oninput="updateUI()">
                 </div>
 
+                <!-- Repayment Frequency -->
                 <div>
                     <label class="text-sm font-medium text-slate-700 mb-1 block">Repayment Frequency</label>
                     <select id="freqSelect" class="w-full border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 border outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" onchange="updateUI()">
@@ -65,56 +79,115 @@
                 </div>
             </div>
 
+            <!-- Lender Selection & Inputs -->
             <div class="glass-card p-6 lg:col-span-2">
                 <h2 class="text-lg font-semibold border-b pb-2 mb-4">Select Lenders</h2>
                 <div id="loading" class="text-sm font-medium text-indigo-600 animate-pulse">Fetching live data from Google Sheets...</div>
                 
-                <div id="lendersContainer" class="space-y-4 hidden h-[300px] overflow-y-auto pr-2">
-                    </div>
+                <div id="lendersContainer" class="space-y-4 hidden h-[260px] overflow-y-auto pr-2">
+                    <!-- Dynamic Lender Cards Injected Here -->
+                </div>
             </div>
         </div>
 
+        <!-- Visualizations -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Amortization Area Chart -->
             <div class="glass-card p-6">
                 <h3 class="text-md font-semibold text-slate-800 mb-4">Principal vs. Interest (Balance Timeline)</h3>
-                <canvas id="amortizationChart" height="250"></canvas>
+                <div class="relative h-64 w-full">
+                    <canvas id="amortizationChart"></canvas>
+                </div>
             </div>
 
+            <!-- Time Saved Bar Chart -->
             <div class="glass-card p-6">
                 <h3 class="text-md font-semibold text-slate-800 mb-4">Time to Payoff (Years)</h3>
-                <canvas id="timeChart" height="250"></canvas>
+                <div class="relative h-64 w-full">
+                    <canvas id="timeChart"></canvas>
+                </div>
             </div>
         </div>
 
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-lg transform transition-transform duration-300 translate-y-20 opacity-0 z-50">
+        Summary copied to clipboard!
     </div>
 
     <script>
         // === LIVE GOOGLE SHEET CSV URL ===
         const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSwLQC98juKWTkrk2kPRjPPEoqfaDqAaICJwKBWztGK-bHh86habX4gmbmF7lmH9dgNFYn2cLylOAc8/pub?gid=0&single=true&output=csv"; 
         
+        // Fallback data in case the sheet URL gets blocked by CORS or sharing permissions change
+        const fallbackData = [
+            { "Lender Name": "CBA (Demo)", "Repayment Type": "Annualized" },
+            { "Lender Name": "Westpac (Demo)", "Repayment Type": "Accelerated" },
+            { "Lender Name": "NAB (Demo)", "Repayment Type": "Annualized" },
+            { "Lender Name": "Macquarie (Demo)", "Repayment Type": "Accelerated" },
+            { "Lender Name": "ANZ (Demo)", "Repayment Type": "Annualized" }
+        ];
+
         let lendersData = [];
         let amortizationChartInst = null;
         let timeChartInst = null;
 
         // Initialize App & Fetch Live Data
         async function init() {
-            Papa.parse(GOOGLE_SHEET_CSV_URL, {
-                download: true,
-                header: true,
-                skipEmptyLines: true,
-                complete: function(results) {
-                    lendersData = results.data;
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('lendersContainer').classList.remove('hidden');
-                    renderLenderCards();
-                },
-                error: function(err) {
-                    document.getElementById('loading').innerText = "Error loading data. Please check the console.";
-                    document.getElementById('loading').classList.remove('text-indigo-600', 'animate-pulse');
-                    document.getElementById('loading').classList.add('text-red-500');
-                    console.error("PapaParse Error:", err);
+            try {
+                let response;
+                
+                // First attempt: Try standard fetch (works when hosted on a real server)
+                try {
+                    response = await fetch(GOOGLE_SHEET_CSV_URL);
+                } catch (e) {
+                    console.log("Direct fetch blocked (likely due to local file:// execution). Trying proxy...");
                 }
-            });
+                
+                // Second attempt: Use a safe CORS proxy (solves the issue when opening locally from your computer)
+                if (!response || !response.ok) {
+                    const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(GOOGLE_SHEET_CSV_URL);
+                    response = await fetch(proxyUrl);
+                }
+
+                if (!response || !response.ok) throw new Error("Could not reach Google Sheets or Proxy.");
+                
+                const textData = await response.text();
+                
+                // If Google redirects to a login page, it returns HTML instead of CSV
+                if (textData.trim().startsWith('<')) {
+                    throw new Error("Received HTML. Sheet might not be fully public.");
+                }
+
+                Papa.parse(textData, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        processData(results.data, false);
+                    }
+                });
+
+            } catch (error) {
+                console.warn("Could not fetch live sheet, using demo data:", error);
+                processData(fallbackData, true);
+            }
+        }
+
+        function processData(data, isFallback) {
+            lendersData = data;
+            
+            const loadingEl = document.getElementById('loading');
+            if (isFallback) {
+                loadingEl.innerHTML = "<span class='text-amber-600 font-medium'>Live sheet blocked by browser security. Showing demo data.</span>";
+                // Hide the message after a few seconds
+                setTimeout(() => { loadingEl.style.display = 'none'; }, 4000);
+            } else {
+                loadingEl.style.display = 'none';
+            }
+            
+            document.getElementById('lendersContainer').classList.remove('hidden');
+            renderLenderCards();
         }
 
         // Render Lender Checkboxes & Rate Sliders
@@ -123,24 +196,27 @@
             container.innerHTML = '';
 
             lendersData.forEach((lender, index) => {
-                // Failsafe in case headers have trailing spaces or empty rows get through
-                const lenderName = lender["Lender Name"] || lender["Lender Name "] || "Unknown Lender";
+                // Clean up headers in case of trailing spaces in sheet
+                const lenderName = lender["Lender Name"] || lender["Lender Name "] || "";
                 const repaymentType = lender["Repayment Type"] || lender["Repayment Type "] || "Annualized";
                 
-                if(!lenderName || lenderName === "Unknown Lender") return; 
+                if(!lenderName.trim()) return; 
                 
                 const isAccelerated = repaymentType.toLowerCase().includes("accelerated");
                 const typeColor = isAccelerated 
                                 ? "bg-emerald-100 text-emerald-800 border-emerald-200" 
                                 : "bg-amber-100 text-amber-800 border-amber-200";
 
+                // Check first two by default to show immediate comparison
+                const checkedAttr = (index < 2) ? "checked" : "";
+
                 const html = `
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl gap-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl gap-4 transition-all hover:border-indigo-300 hover:shadow-sm">
                         <div class="flex items-center gap-3 w-full sm:w-1/3">
-                            <input type="checkbox" id="check_${index}" checked class="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" onchange="updateUI()">
+                            <input type="checkbox" id="check_${index}" ${checkedAttr} class="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer" onchange="updateUI()">
                             <div>
-                                <label class="font-semibold text-slate-800 block truncate" title="${lenderName}">${lenderName}</label>
-                                <span class="text-[11px] uppercase tracking-wider font-bold px-2 py-1 rounded border ${typeColor}">
+                                <label for="check_${index}" class="font-semibold text-slate-800 block truncate cursor-pointer" title="${lenderName}">${lenderName}</label>
+                                <span class="text-[11px] uppercase tracking-wider font-bold px-2 py-0.5 mt-1 inline-block rounded border ${typeColor}">
                                     ${repaymentType}
                                 </span>
                             </div>
@@ -178,9 +254,9 @@
             let actualPayment = 0;
             let periodsPerYear = 12;
 
-            // Failsafe for missing type
             const safeType = type || "";
 
+            // Calculate exact repayment amounts based on strategy
             if (freq === 'Weekly') {
                 periodsPerYear = 52;
                 if (safeType.toLowerCase().includes('accelerated')) {
@@ -199,14 +275,21 @@
                 actualPayment = standardMonthlyPmt;
             }
 
+            // Amortization Schedule Generation
             let balance = principal;
             let totalInterest = 0;
+            // Using a simplified daily-compounding approximation common in Australian mortgages
             let dailyRate = (annualRate / 100) / 365; 
             let daysPerPeriod = 365 / periodsPerYear;
-            
             let periodRate = dailyRate * daysPerPeriod; 
+            
             let periodsTaken = 0;
             let chartData = [];
+
+            // Prevent infinite loop if payment doesn't cover interest
+            if (actualPayment <= balance * periodRate) {
+                 return { payment: actualPayment, totalInterest: 0, yearsTaken: years, chartData: [{year:0, balance:principal}, {year:years, balance:principal}] };
+            }
 
             while (balance > 0.01 && periodsTaken < (years * periodsPerYear * 1.5)) {
                 let interestPmt = balance * periodRate;
@@ -221,12 +304,18 @@
                 totalInterest += interestPmt;
                 periodsTaken++;
 
+                // Record data points less frequently for better chart performance
                 if (periodsTaken % periodsPerYear === 0 || balance <= 0.01) {
                     chartData.push({
                         year: periodsTaken / periodsPerYear,
                         balance: Math.max(0, balance)
                     });
                 }
+            }
+
+            // Always ensure the start point (Year 0) is there
+            if (chartData.length === 0 || chartData[0].year !== 0) {
+                chartData.unshift({ year: 0, balance: principal });
             }
 
             return {
@@ -249,7 +338,10 @@
             let chartDatasets = [];
             let timeDatasets = { labels: [], data: [], bgColors: [] };
 
-            const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899']; 
+            // Premium Color Palette
+            const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#ef4444']; 
+
+            let activeCount = 0;
 
             lendersData.forEach((lender, index) => {
                 const checkbox = document.getElementById(`check_${index}`);
@@ -263,20 +355,25 @@
 
                 document.getElementById(`repaymentAmt_${index}`).innerText = '$' + results.payment.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-                const colorIndex = index % colors.length;
+                const colorIndex = activeCount % colors.length;
 
                 chartDatasets.push({
                     label: lenderName,
                     data: results.chartData.map(d => ({ x: d.year, y: d.balance })),
                     borderColor: colors[colorIndex],
                     backgroundColor: colors[colorIndex] + '20',
+                    borderWidth: 2,
                     fill: true,
-                    tension: 0.4
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHitRadius: 10
                 });
 
                 timeDatasets.labels.push(lenderName);
                 timeDatasets.data.push(results.yearsTaken.toFixed(1));
                 timeDatasets.bgColors.push(colors[colorIndex]);
+                
+                activeCount++;
             });
 
             updateCharts(chartDatasets, timeDatasets);
@@ -284,6 +381,10 @@
 
         // Render Chart.js Visualizations
         function updateCharts(amortizationData, timeData) {
+            Chart.defaults.font.family = "'Inter', sans-serif";
+            Chart.defaults.color = '#64748b';
+
+            // Amortization Area Chart
             const ctxAmort = document.getElementById('amortizationChart').getContext('2d');
             if (amortizationChartInst) amortizationChartInst.destroy();
             
@@ -293,14 +394,38 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
                     scales: {
-                        x: { type: 'linear', title: { display: true, text: 'Years' } },
-                        y: { title: { display: true, text: 'Remaining Balance ($)' }, beginAtZero: true }
+                        x: { 
+                            type: 'linear', 
+                            title: { display: true, text: 'Years' },
+                            grid: { display: false }
+                        },
+                        y: { 
+                            title: { display: true, text: 'Remaining Balance' }, 
+                            beginAtZero: true,
+                            ticks: { callback: function(value) { return '$' + (value/1000) + 'k'; } }
+                        }
                     },
-                    plugins: { tooltip: { mode: 'index', intersect: false } }
+                    plugins: { 
+                        legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.y !== null) {
+                                        label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(context.parsed.y);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
                 }
             });
 
+            // Time Saved Bar Chart
             const ctxTime = document.getElementById('timeChart').getContext('2d');
             if (timeChartInst) timeChartInst.destroy();
 
@@ -312,19 +437,31 @@
                         label: 'Years to Payoff',
                         data: timeData.data,
                         backgroundColor: timeData.bgColors,
-                        borderRadius: 6
+                        borderRadius: 6,
+                        barThickness: 'flex',
+                        maxBarThickness: 40
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     indexAxis: 'y',
-                    scales: { x: { beginAtZero: true, title: { display: true, text: 'Years' } } }
+                    scales: { 
+                        x: { 
+                            beginAtZero: true, 
+                            title: { display: true, text: 'Years' },
+                            grid: { borderDash: [2, 4] }
+                        },
+                        y: { grid: { display: false } }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
                 }
             });
         }
 
-        // Share/Copy function
+        // Share/Copy function (IFrame compatible)
         function shareDashboard() {
             let summary = `Loan Dashboard Summary:\nLoan Amount: ${document.getElementById('loanAmtDisplay').innerText}\nFrequency: ${document.getElementById('freqSelect').value}\n\n`;
             
@@ -339,9 +476,30 @@
                 }
             });
 
-            navigator.clipboard.writeText(summary).then(() => {
-                alert("Summary copied to clipboard! You can paste this in an email.");
-            });
+            // Fallback clipboard method for iframes
+            const textArea = document.createElement("textarea");
+            textArea.value = summary;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-999999px";
+            document.body.appendChild(textArea);
+            textArea.select();
+            
+            try {
+                document.execCommand('copy');
+                showToast();
+            } catch (err) {
+                console.error('Failed to copy text', err);
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+        function showToast() {
+            const toast = document.getElementById('toast');
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
         }
 
         // Run setup
