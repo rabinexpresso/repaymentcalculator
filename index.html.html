@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Lender Comparison Dashboard</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .glass-card { background: white; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); }
+        .slider-custom { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 5px; background: #e2e8f0; outline: none; }
+        .slider-custom::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #4f46e5; cursor: pointer; transition: 0.2s; }
+        .slider-custom::-webkit-slider-thumb:hover { background: #4338ca; transform: scale(1.1); }
+    </style>
+</head>
+<body class="text-slate-800 antialiased p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center glass-card p-6">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">Lender Repayment Strategy</h1>
+                <p class="text-sm text-slate-500 mt-1">Compare Accelerated vs Annualized strategies instantly.</p>
+            </div>
+            <button onclick="shareDashboard()" class="mt-4 md:mt-0 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-5.368m0 5.368l5.662 3.397a3 3 0 10.982-1.74m-6.644-1.657l5.662-3.397a3 3 0 10-.982-1.74m6.644 1.657a3 3 0 110-5.368m0 5.368a3 3 0 110-5.368"></path></svg>
+                Copy Report Summary
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <div class="glass-card p-6 lg:col-span-1 space-y-6">
+                <h2 class="text-lg font-semibold border-b pb-2">Global Parameters</h2>
+                
+                <div>
+                    <div class="flex justify-between mb-1">
+                        <label class="text-sm font-medium text-slate-700">Loan Amount</label>
+                        <span id="loanAmtDisplay" class="text-sm font-bold text-indigo-600">$500,000</span>
+                    </div>
+                    <input type="range" id="loanAmt" min="100000" max="2000000" step="10000" value="500000" class="slider-custom" oninput="updateUI()">
+                </div>
+
+                <div>
+                    <div class="flex justify-between mb-1">
+                        <label class="text-sm font-medium text-slate-700">Loan Term (Years)</label>
+                        <span id="loanTermDisplay" class="text-sm font-bold text-indigo-600">30</span>
+                    </div>
+                    <input type="range" id="loanTerm" min="5" max="40" step="1" value="30" class="slider-custom" oninput="updateUI()">
+                </div>
+
+                <div>
+                    <label class="text-sm font-medium text-slate-700 mb-1 block">Repayment Frequency</label>
+                    <select id="freqSelect" class="w-full border-slate-300 rounded-lg p-2.5 text-sm bg-slate-50 border outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow" onchange="updateUI()">
+                        <option value="Monthly">Monthly</option>
+                        <option value="Fortnightly" selected>Fortnightly</option>
+                        <option value="Weekly">Weekly</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="glass-card p-6 lg:col-span-2">
+                <h2 class="text-lg font-semibold border-b pb-2 mb-4">Select Lenders</h2>
+                <div id="loading" class="text-sm font-medium text-indigo-600 animate-pulse">Fetching live data from Google Sheets...</div>
+                
+                <div id="lendersContainer" class="space-y-4 hidden h-[300px] overflow-y-auto pr-2">
+                    </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="glass-card p-6">
+                <h3 class="text-md font-semibold text-slate-800 mb-4">Principal vs. Interest (Balance Timeline)</h3>
+                <canvas id="amortizationChart" height="250"></canvas>
+            </div>
+
+            <div class="glass-card p-6">
+                <h3 class="text-md font-semibold text-slate-800 mb-4">Time to Payoff (Years)</h3>
+                <canvas id="timeChart" height="250"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // === LIVE GOOGLE SHEET CSV URL ===
+        const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSwLQC98juKWTkrk2kPRjPPEoqfaDqAaICJwKBWztGK-bHh86habX4gmbmF7lmH9dgNFYn2cLylOAc8/pub?gid=0&single=true&output=csv"; 
+        
+        let lendersData = [];
+        let amortizationChartInst = null;
+        let timeChartInst = null;
+
+        // Initialize App & Fetch Live Data
+        async function init() {
+            Papa.parse(GOOGLE_SHEET_CSV_URL, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    lendersData = results.data;
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('lendersContainer').classList.remove('hidden');
+                    renderLenderCards();
+                },
+                error: function(err) {
+                    document.getElementById('loading').innerText = "Error loading data. Please check the console.";
+                    document.getElementById('loading').classList.remove('text-indigo-600', 'animate-pulse');
+                    document.getElementById('loading').classList.add('text-red-500');
+                    console.error("PapaParse Error:", err);
+                }
+            });
+        }
+
+        // Render Lender Checkboxes & Rate Sliders
+        function renderLenderCards() {
+            const container = document.getElementById('lendersContainer');
+            container.innerHTML = '';
+
+            lendersData.forEach((lender, index) => {
+                // Failsafe in case headers have trailing spaces or empty rows get through
+                const lenderName = lender["Lender Name"] || lender["Lender Name "] || "Unknown Lender";
+                const repaymentType = lender["Repayment Type"] || lender["Repayment Type "] || "Annualized";
+                
+                if(!lenderName || lenderName === "Unknown Lender") return; 
+                
+                const isAccelerated = repaymentType.toLowerCase().includes("accelerated");
+                const typeColor = isAccelerated 
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-200" 
+                                : "bg-amber-100 text-amber-800 border-amber-200";
+
+                const html = `
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl gap-4">
+                        <div class="flex items-center gap-3 w-full sm:w-1/3">
+                            <input type="checkbox" id="check_${index}" checked class="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" onchange="updateUI()">
+                            <div>
+                                <label class="font-semibold text-slate-800 block truncate" title="${lenderName}">${lenderName}</label>
+                                <span class="text-[11px] uppercase tracking-wider font-bold px-2 py-1 rounded border ${typeColor}">
+                                    ${repaymentType}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="w-full sm:w-1/3">
+                            <div class="flex justify-between mb-1">
+                                <span class="text-xs font-medium text-slate-500">Interest Rate</span>
+                                <span id="rateDisplay_${index}" class="text-xs font-bold text-slate-700">6.00%</span>
+                            </div>
+                            <input type="range" id="rate_${index}" min="2.00" max="10.00" step="0.01" value="6.00" class="slider-custom" oninput="updateRateDisplay(${index})">
+                        </div>
+                        <div class="text-right w-full sm:w-1/3">
+                            <div class="text-xs text-slate-500">Repayment</div>
+                            <div id="repaymentAmt_${index}" class="text-lg font-bold text-indigo-600">--</div>
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', html);
+            });
+            updateUI();
+        }
+
+        function updateRateDisplay(index) {
+            const rate = document.getElementById(`rate_${index}`).value;
+            document.getElementById(`rateDisplay_${index}`).innerText = `${parseFloat(rate).toFixed(2)}%`;
+            updateUI();
+        }
+
+        // Core Calculation Logic
+        function calculateMortgage(principal, annualRate, years, freq, type) {
+            let monthlyRate = (annualRate / 100) / 12;
+            let totalMonths = years * 12;
+            
+            let standardMonthlyPmt = (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -totalMonths));
+            let actualPayment = 0;
+            let periodsPerYear = 12;
+
+            // Failsafe for missing type
+            const safeType = type || "";
+
+            if (freq === 'Weekly') {
+                periodsPerYear = 52;
+                if (safeType.toLowerCase().includes('accelerated')) {
+                    actualPayment = standardMonthlyPmt / 4; 
+                } else {
+                    actualPayment = (standardMonthlyPmt * 12) / 52; 
+                }
+            } else if (freq === 'Fortnightly') {
+                periodsPerYear = 26;
+                if (safeType.toLowerCase().includes('accelerated')) {
+                    actualPayment = standardMonthlyPmt / 2; 
+                } else {
+                    actualPayment = (standardMonthlyPmt * 12) / 26; 
+                }
+            } else { 
+                actualPayment = standardMonthlyPmt;
+            }
+
+            let balance = principal;
+            let totalInterest = 0;
+            let dailyRate = (annualRate / 100) / 365; 
+            let daysPerPeriod = 365 / periodsPerYear;
+            
+            let periodRate = dailyRate * daysPerPeriod; 
+            let periodsTaken = 0;
+            let chartData = [];
+
+            while (balance > 0.01 && periodsTaken < (years * periodsPerYear * 1.5)) {
+                let interestPmt = balance * periodRate;
+                let principalPmt = actualPayment - interestPmt;
+                
+                if (balance < principalPmt) {
+                    principalPmt = balance;
+                    actualPayment = principalPmt + interestPmt;
+                }
+
+                balance -= principalPmt;
+                totalInterest += interestPmt;
+                periodsTaken++;
+
+                if (periodsTaken % periodsPerYear === 0 || balance <= 0.01) {
+                    chartData.push({
+                        year: periodsTaken / periodsPerYear,
+                        balance: Math.max(0, balance)
+                    });
+                }
+            }
+
+            return {
+                payment: actualPayment,
+                totalInterest: totalInterest,
+                yearsTaken: periodsTaken / periodsPerYear,
+                chartData: chartData
+            };
+        }
+
+        // Update User Interface and Charts
+        function updateUI() {
+            const principal = parseFloat(document.getElementById('loanAmt').value);
+            const years = parseInt(document.getElementById('loanTerm').value);
+            const freq = document.getElementById('freqSelect').value;
+
+            document.getElementById('loanAmtDisplay').innerText = '$' + principal.toLocaleString();
+            document.getElementById('loanTermDisplay').innerText = years + ' Yrs';
+
+            let chartDatasets = [];
+            let timeDatasets = { labels: [], data: [], bgColors: [] };
+
+            const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899']; 
+
+            lendersData.forEach((lender, index) => {
+                const checkbox = document.getElementById(`check_${index}`);
+                if (!checkbox || !checkbox.checked) return;
+
+                const rate = parseFloat(document.getElementById(`rate_${index}`).value);
+                const type = lender["Repayment Type"] || lender["Repayment Type "];
+                const lenderName = lender["Lender Name"] || lender["Lender Name "];
+                
+                const results = calculateMortgage(principal, rate, years, freq, type);
+
+                document.getElementById(`repaymentAmt_${index}`).innerText = '$' + results.payment.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+                const colorIndex = index % colors.length;
+
+                chartDatasets.push({
+                    label: lenderName,
+                    data: results.chartData.map(d => ({ x: d.year, y: d.balance })),
+                    borderColor: colors[colorIndex],
+                    backgroundColor: colors[colorIndex] + '20',
+                    fill: true,
+                    tension: 0.4
+                });
+
+                timeDatasets.labels.push(lenderName);
+                timeDatasets.data.push(results.yearsTaken.toFixed(1));
+                timeDatasets.bgColors.push(colors[colorIndex]);
+            });
+
+            updateCharts(chartDatasets, timeDatasets);
+        }
+
+        // Render Chart.js Visualizations
+        function updateCharts(amortizationData, timeData) {
+            const ctxAmort = document.getElementById('amortizationChart').getContext('2d');
+            if (amortizationChartInst) amortizationChartInst.destroy();
+            
+            amortizationChartInst = new Chart(ctxAmort, {
+                type: 'line',
+                data: { datasets: amortizationData },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { type: 'linear', title: { display: true, text: 'Years' } },
+                        y: { title: { display: true, text: 'Remaining Balance ($)' }, beginAtZero: true }
+                    },
+                    plugins: { tooltip: { mode: 'index', intersect: false } }
+                }
+            });
+
+            const ctxTime = document.getElementById('timeChart').getContext('2d');
+            if (timeChartInst) timeChartInst.destroy();
+
+            timeChartInst = new Chart(ctxTime, {
+                type: 'bar',
+                data: {
+                    labels: timeData.labels,
+                    datasets: [{
+                        label: 'Years to Payoff',
+                        data: timeData.data,
+                        backgroundColor: timeData.bgColors,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: { x: { beginAtZero: true, title: { display: true, text: 'Years' } } }
+                }
+            });
+        }
+
+        // Share/Copy function
+        function shareDashboard() {
+            let summary = `Loan Dashboard Summary:\nLoan Amount: ${document.getElementById('loanAmtDisplay').innerText}\nFrequency: ${document.getElementById('freqSelect').value}\n\n`;
+            
+            lendersData.forEach((lender, index) => {
+                const checkbox = document.getElementById(`check_${index}`);
+                if (checkbox && checkbox.checked) {
+                    const rate = document.getElementById(`rateDisplay_${index}`).innerText;
+                    const pmt = document.getElementById(`repaymentAmt_${index}`).innerText;
+                    const type = lender["Repayment Type"] || lender["Repayment Type "];
+                    const lenderName = lender["Lender Name"] || lender["Lender Name "];
+                    summary += `${lenderName} (${type} @ ${rate}): ${pmt} per period\n`;
+                }
+            });
+
+            navigator.clipboard.writeText(summary).then(() => {
+                alert("Summary copied to clipboard! You can paste this in an email.");
+            });
+        }
+
+        // Run setup
+        window.onload = init;
+    </script>
+</body>
+</html>
